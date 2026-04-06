@@ -129,9 +129,9 @@ header "kube-proxy replacement"
 
 if [[ -n "${CILIUM_POD}" ]]; then
   KPR_STATUS=$(kubectl -n "${HELM_NAMESPACE}" exec "${CILIUM_POD}" -- \
-    cilium status 2>/dev/null | grep -i "kube-proxy replacement" || echo "")
-  if echo "${KPR_STATUS}" | grep -qi "strict\|enabled\|true"; then
-    pass "kube-proxy replacement: active (${KPR_STATUS})"
+    cilium status 2>/dev/null | grep -i "KubeProxyReplacement" || echo "")
+  if echo "${KPR_STATUS}" | grep -qi "True\|strict\|enabled"; then
+    pass "kube-proxy replacement: active — ${KPR_STATUS}"
   else
     warn "kube-proxy replacement status unclear: ${KPR_STATUS:-not found in status output}"
   fi
