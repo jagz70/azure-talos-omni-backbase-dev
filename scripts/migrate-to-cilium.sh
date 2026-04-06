@@ -20,10 +20,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
 
-# ─── Load .env ────────────────────────────────────────────────────────────────
+# ─── Load .env if present (optional) ─────────────────────────────────────────
 if [[ -f "${ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
+fi
+
+# ─── Auto-detect KUBECONFIG ───────────────────────────────────────────────────
+# Use KUBECONFIG from environment if set; otherwise fall back to the default
+# kubectl location. If neither works, fail with a clear message.
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  if [[ -f "${HOME}/.kube/config" ]]; then
+    export KUBECONFIG="${HOME}/.kube/config"
+  fi
 fi
 
 green()  { echo -e "\033[32m[OK]\033[0m  $*"; }
@@ -35,19 +44,21 @@ info()   { echo -e "    $*"; }
 # ─── Pre-migration checks ─────────────────────────────────────────────────────
 header "Pre-migration validation"
 
-if [[ -z "${KUBECONFIG:-}" ]] || [[ ! -f "${KUBECONFIG}" ]]; then
-  red "KUBECONFIG not set or file not found. Set KUBECONFIG in .env."
-  exit 1
-fi
-green "KUBECONFIG: ${KUBECONFIG}"
-
 if ! kubectl get nodes &>/dev/null; then
   red "Cannot reach cluster. Check KUBECONFIG and network."
+  if [[ -z "${KUBECONFIG:-}" ]]; then
+    red "KUBECONFIG is not set. Set it in the environment or in .env."
+  else
+    red "KUBECONFIG: ${KUBECONFIG}"
+  fi
   exit 1
 fi
 NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
 CP_READY=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep " Ready " | wc -l | tr -d ' ')
 green "Cluster reachable — ${NODE_COUNT} nodes, ${CP_READY} control plane Ready"
+if [[ -n "${KUBECONFIG:-}" ]]; then
+  green "KUBECONFIG: ${KUBECONFIG}"
+fi
 
 # Abort if Cilium is already installed
 if kubectl -n kube-system get ds cilium &>/dev/null; then
@@ -72,7 +83,7 @@ if [[ "${KPROXY_EXISTS}" -gt 0 ]]; then
 fi
 
 echo ""
-echo "  This script will:"
+echo "  Migration plan:"
 echo "    1. Remove Flannel (if present)"
 echo "    2. Remove kube-proxy (if present)"
 echo "    3. Verify Omni does not reconcile them back (30s check)"
@@ -81,13 +92,7 @@ echo "    5. Restart CoreDNS"
 echo "    6. Validate the installation"
 echo ""
 echo "  Expected pod networking disruption: ~60-120 seconds"
-echo "  No existing production workloads will be permanently affected."
 echo ""
-read -rp "  Proceed with migration? [y/N] " CONFIRM
-if [[ "${CONFIRM,,}" != "y" ]]; then
-  echo "  Aborted."
-  exit 0
-fi
 
 # ─── Step 1: Remove Flannel ───────────────────────────────────────────────────
 header "Step 1/6 — Remove Flannel"
@@ -125,7 +130,7 @@ if [[ "${KPROXY_EXISTS}" -gt 0 ]]; then
   info "Deleting kube-proxy DaemonSet..."
   kubectl -n kube-system delete ds kube-proxy --timeout=60s
 
-  info "Deleting kube-proxy ConfigMap..."
+  info "Deleting kube-proxy ConfigMap (if present)..."
   kubectl -n kube-system delete cm kube-proxy 2>/dev/null || true
 
   green "kube-proxy removed"
@@ -136,8 +141,8 @@ fi
 # ─── Step 3: Verify Omni does not reconcile them back ────────────────────────
 header "Step 3/6 — Verify Omni non-reconciliation (30s)"
 
-info "Watching for 30 seconds to confirm Omni does not recreate Flannel or kube-proxy..."
-info "Evidence: no Omni labels on DaemonSets, no ownerReferences, bootstrap complete."
+info "Waiting 30 seconds to confirm Omni does not recreate Flannel or kube-proxy..."
+info "Basis: no ownerReferences on either DS, no CNI field in Cluster spec, bootstrap complete."
 sleep 30
 
 FLANNEL_BACK=$(kubectl -n kube-system get ds kube-flannel --no-headers 2>/dev/null | wc -l | tr -d ' ')
@@ -145,14 +150,13 @@ KPROXY_BACK=$(kubectl -n kube-system get ds kube-proxy --no-headers 2>/dev/null 
 
 if [[ "${FLANNEL_BACK}" -gt 0 ]]; then
   red "Flannel was recreated by Omni after deletion."
-  red "Manual Omni action required: disable Flannel in Omni cluster CNI configuration."
-  red "See docs/runbooks/cni-migration-flannel-to-cilium.md — Step 1."
+  red "Manual Omni action required: check cluster config patches in Omni UI."
+  red "See docs/runbooks/cni-migration-flannel-to-cilium.md"
   exit 1
 fi
 if [[ "${KPROXY_BACK}" -gt 0 ]]; then
-  red "kube-proxy was recreated by Omni after deletion."
-  red "This may happen if Omni is reconciling Kubernetes upgrade manifests."
-  red "Re-run this script after a few minutes, or proceed and re-run after install."
+  red "kube-proxy was recreated after deletion."
+  red "Re-run this script after investigating Omni cluster config."
   exit 1
 fi
 green "Confirmed: Omni did not reconcile Flannel or kube-proxy back"

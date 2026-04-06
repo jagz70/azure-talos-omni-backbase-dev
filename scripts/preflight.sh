@@ -30,30 +30,33 @@ if [[ -f "${ENV_FILE}" ]]; then
   source "${ENV_FILE}"
   pass ".env loaded from ${ENV_FILE}"
 else
-  fail ".env not found. Copy .env.example to .env and populate it."
-  echo "       Aborting — .env is required."
-  exit 1
+  warn ".env not found — using environment variables and defaults"
+fi
+
+# Auto-detect KUBECONFIG if not set
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  if [[ -f "${HOME}/.kube/config" ]]; then
+    export KUBECONFIG="${HOME}/.kube/config"
+  fi
 fi
 
 # ─── Required variables ───────────────────────────────────────────────────────
 header "Required variables"
 
-check_var() {
-  local var_name="$1"
-  local var_value="${!var_name:-}"
-  if [[ -z "${var_value}" ]]; then
-    fail "${var_name} is not set in .env"
-  else
-    pass "${var_name} = ${var_value}"
-  fi
-}
+CLUSTER_API_ENDPOINT="${CLUSTER_API_ENDPOINT:-20.120.8.75}"
+ISOVALENT_HELM_REPO="${ISOVALENT_HELM_REPO:-https://helm.isovalent.com}"
 
-check_var KUBECONFIG
-check_var CLUSTER_API_ENDPOINT
-check_var ISOVALENT_HELM_REPO
+if [[ -n "${KUBECONFIG:-}" ]]; then
+  pass "KUBECONFIG = ${KUBECONFIG}"
+else
+  warn "KUBECONFIG not set — relying on default kubectl config discovery"
+fi
+
+pass "CLUSTER_API_ENDPOINT = ${CLUSTER_API_ENDPOINT}"
+pass "ISOVALENT_HELM_REPO = ${ISOVALENT_HELM_REPO}"
 
 if [[ -z "${ISOVALENT_VERSION:-}" ]]; then
-  warn "ISOVALENT_VERSION is not set. You must set this before running make install."
+  warn "ISOVALENT_VERSION not set — install-cilium.sh will auto-discover latest stable"
 else
   pass "ISOVALENT_VERSION = ${ISOVALENT_VERSION}"
 fi
@@ -82,11 +85,14 @@ check_tool az
 # ─── kubeconfig ───────────────────────────────────────────────────────────────
 header "kubeconfig"
 
-if [[ ! -f "${KUBECONFIG}" ]]; then
-  fail "kubeconfig not found at: ${KUBECONFIG}"
-  fail "Download from Omni: https://bellyupdown.na-west-1.omni.siderolabs.io/clusters"
+if [[ -n "${KUBECONFIG:-}" ]]; then
+  if [[ -f "${KUBECONFIG}" ]]; then
+    pass "kubeconfig file exists: ${KUBECONFIG}"
+  else
+    fail "KUBECONFIG set but file not found: ${KUBECONFIG}"
+  fi
 else
-  pass "kubeconfig file exists: ${KUBECONFIG}"
+  warn "KUBECONFIG not explicitly set — using kubectl default discovery"
 fi
 
 # ─── Cluster connectivity ─────────────────────────────────────────────────────
@@ -138,8 +144,8 @@ fi
 
 if [[ "${EXISTING_FLANNEL}" -gt 0 ]]; then
   fail "Flannel CNI is running. Cilium cannot be installed alongside Flannel."
-  fail "Migration required. Follow: docs/runbooks/cni-migration-flannel-to-cilium.md"
-  fail "Steps: (1) Set Omni cluster CNI to 'none', (2) delete Flannel, (3) delete kube-proxy, (4) re-run make install"
+  fail "Run: make migrate-to-cilium  (automated migration)"
+  fail "See: docs/runbooks/cni-migration-flannel-to-cilium.md"
 else
   pass "Flannel not found — CNI slot is clear for Cilium"
 fi
@@ -150,8 +156,7 @@ header "kube-proxy"
 KUBE_PROXY=$(kubectl -n kube-system get ds kube-proxy --no-headers 2>/dev/null | wc -l | tr -d ' ')
 if [[ "${KUBE_PROXY}" -gt 0 ]]; then
   fail "kube-proxy DaemonSet is running. Must be removed before Cilium kube-proxy replacement install."
-  fail "Migration required. See: docs/runbooks/cni-migration-flannel-to-cilium.md"
-  fail "kubectl -n kube-system delete ds kube-proxy"
+  fail "Run: make migrate-to-cilium  (automated migration)"
 else
   pass "kube-proxy not running (correct for Cilium kube-proxy replacement)"
 fi

@@ -25,29 +25,36 @@ HELM_RELEASE="${HELM_RELEASE:-cilium}"
 ISOVALENT_HELM_REPO="${ISOVALENT_HELM_REPO:-https://helm.isovalent.com}"
 DRY_RUN="${DRY_RUN:-false}"
 
-# ─── Load .env ────────────────────────────────────────────────────────────────
+# ─── Load .env if present (optional) ─────────────────────────────────────────
 if [[ -f "${ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
   echo "==> Loaded .env"
-else
-  echo "WARN: .env not found — using environment variables and defaults"
-  echo "      Copy .env.example to .env and set KUBECONFIG at minimum."
 fi
 
-# ─── Validate required inputs ─────────────────────────────────────────────────
-echo ""
-echo "==> Checking required inputs..."
-
+# ─── Auto-detect KUBECONFIG ───────────────────────────────────────────────────
+# Use KUBECONFIG from environment if set; otherwise fall back to the default
+# kubectl location. The explicit file check is skipped when kubectl works
+# without a file path (e.g., in-cluster or merged kubeconfig).
 if [[ -z "${KUBECONFIG:-}" ]]; then
-  echo "ERROR: KUBECONFIG is not set."
-  echo "       Download kubeconfig from Omni:"
-  echo "       https://bellyupdown.na-west-1.omni.siderolabs.io/clusters"
-  echo "       Then set KUBECONFIG=/path/to/kubeconfig in .env"
-  exit 1
+  if [[ -f "${HOME}/.kube/config" ]]; then
+    export KUBECONFIG="${HOME}/.kube/config"
+  fi
 fi
-if [[ ! -f "${KUBECONFIG}" ]]; then
-  echo "ERROR: KUBECONFIG file not found: ${KUBECONFIG}"
+
+# ─── Validate cluster access ──────────────────────────────────────────────────
+echo ""
+echo "==> Checking cluster access..."
+
+if ! kubectl get nodes &>/dev/null; then
+  echo "ERROR: Cannot reach cluster."
+  if [[ -z "${KUBECONFIG:-}" ]]; then
+    echo "       KUBECONFIG is not set and ~/.kube/config not found."
+    echo "       Download kubeconfig from Omni:"
+    echo "       https://bellyupdown.na-west-1.omni.siderolabs.io/clusters"
+  else
+    echo "       KUBECONFIG: ${KUBECONFIG}"
+  fi
   exit 1
 fi
 
