@@ -94,11 +94,33 @@ make hubble
 | `make preflight` | Run pre-installation checks |
 | `make install` | Install Isovalent Enterprise via Helm |
 | `make validate` | Validate Cilium + Hubble health |
-| `make hubble` | Port-forward Hubble UI to localhost:12000 |
 | `make upgrade` | Upgrade Isovalent Enterprise in place |
-| `make rollback-help` | Print rollback guidance |
-| `make status` | Show Cilium pod and node status |
+| `make rollback-help` | Print rollback guidance and commands |
+| `make status` | Show Cilium pod and node status (quick) |
+| `make hubble` | Port-forward Hubble UI to localhost:12000 |
+| `make hubble-relay` | Port-forward Hubble relay gRPC to localhost:4245 (for hubble CLI) |
+| `make support-bundle` | Collect diagnostic bundle (logs, status, events) |
+| `make helm-history` | Show Helm release history |
+| `make helm-values` | Show current deployed Helm values |
+| `make helm-diff` | Diff a pending upgrade (requires helm-diff plugin) |
+| `make logs-cilium` | Tail Cilium agent logs across all nodes |
+| `make logs-operator` | Tail Cilium operator logs |
+| `make logs-hubble-relay` | Tail Hubble relay logs |
 | `make env-check` | Verify .env is populated |
+
+---
+
+## Runbooks
+
+| Runbook | Purpose |
+|---|---|
+| [cilium-install.md](docs/runbooks/cilium-install.md) | Step-by-step Cilium installation |
+| [cilium-validate.md](docs/runbooks/cilium-validate.md) | Post-install health validation |
+| [cilium-upgrade.md](docs/runbooks/cilium-upgrade.md) | Safe upgrade procedure |
+| [cilium-rollback.md](docs/runbooks/cilium-rollback.md) | Helm rollback procedure |
+| [hubble-access.md](docs/runbooks/hubble-access.md) | Hubble UI and CLI access guide |
+| [node-scaling.md](docs/runbooks/node-scaling.md) | Scale worker nodes via Omni |
+| [support-bundle.md](docs/runbooks/support-bundle.md) | Collect diagnostic support bundle |
 
 ---
 

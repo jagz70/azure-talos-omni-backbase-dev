@@ -129,6 +129,65 @@ rollback-help: ## Print Helm rollback guidance
 	@echo "  See docs/runbooks/cilium-rollback.md for full procedure."
 	@echo ""
 
+# ─── Hubble relay port-forward (for local hubble CLI) ────────────────────────
+
+.PHONY: hubble-relay
+hubble-relay: env-check ## Port-forward Hubble relay gRPC to localhost:4245 (for hubble CLI)
+	@echo "==> Starting Hubble relay port-forward on localhost:4245..."
+	@echo "    In another terminal: HUBBLE_SERVER=localhost:4245 hubble observe --follow"
+	@echo "    Press Ctrl-C to stop."
+	@kubectl port-forward -n $(HELM_NAMESPACE) service/hubble-relay 4245:80
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+
+.PHONY: logs-cilium
+logs-cilium: env-check ## Tail Cilium agent logs across all nodes
+	@kubectl -n $(HELM_NAMESPACE) logs -l k8s-app=cilium --prefix --follow --tail=50
+
+.PHONY: logs-operator
+logs-operator: env-check ## Tail Cilium operator logs
+	@kubectl -n $(HELM_NAMESPACE) logs -l name=cilium-operator --prefix --follow --tail=50
+
+.PHONY: logs-hubble-relay
+logs-hubble-relay: env-check ## Tail Hubble relay logs
+	@kubectl -n $(HELM_NAMESPACE) logs -l k8s-app=hubble-relay --prefix --follow --tail=50
+
+# ─── Release info ─────────────────────────────────────────────────────────────
+
+.PHONY: helm-values
+helm-values: env-check ## Show current deployed Helm values
+	@helm get values $(HELM_RELEASE) -n $(HELM_NAMESPACE)
+
+.PHONY: helm-history
+helm-history: env-check ## Show Helm release history
+	@helm history $(HELM_RELEASE) -n $(HELM_NAMESPACE)
+
+# ─── Support bundle ───────────────────────────────────────────────────────────
+
+.PHONY: support-bundle
+support-bundle: env-check ## Collect manual support bundle (logs, status, events)
+	@BUNDLE_DIR="support-bundle-$$(date +%Y%m%d-%H%M%S)"; \
+	mkdir -p "$$BUNDLE_DIR"; \
+	echo "==> Collecting support bundle into $$BUNDLE_DIR ..."; \
+	kubectl -n $(HELM_NAMESPACE) logs -l k8s-app=cilium --prefix > "$$BUNDLE_DIR/cilium-pods.log" 2>&1 || true; \
+	kubectl -n $(HELM_NAMESPACE) logs -l k8s-app=cilium --previous --prefix > "$$BUNDLE_DIR/cilium-pods-previous.log" 2>&1 || true; \
+	kubectl -n $(HELM_NAMESPACE) logs -l name=cilium-operator --prefix > "$$BUNDLE_DIR/cilium-operator.log" 2>&1 || true; \
+	kubectl -n $(HELM_NAMESPACE) logs -l k8s-app=hubble-relay --prefix > "$$BUNDLE_DIR/hubble-relay.log" 2>&1 || true; \
+	CPOD=$$(kubectl -n $(HELM_NAMESPACE) get pods -l k8s-app=cilium -o name 2>/dev/null | head -1); \
+	[ -n "$$CPOD" ] && kubectl -n $(HELM_NAMESPACE) exec "$$CPOD" -- cilium status > "$$BUNDLE_DIR/cilium-status.txt" 2>&1 || true; \
+	[ -n "$$CPOD" ] && kubectl -n $(HELM_NAMESPACE) exec "$$CPOD" -- cilium endpoint list > "$$BUNDLE_DIR/cilium-endpoints.txt" 2>&1 || true; \
+	[ -n "$$CPOD" ] && kubectl -n $(HELM_NAMESPACE) exec "$$CPOD" -- cilium service list > "$$BUNDLE_DIR/cilium-services.txt" 2>&1 || true; \
+	kubectl get nodes -o wide > "$$BUNDLE_DIR/nodes.txt" 2>&1 || true; \
+	kubectl -n $(HELM_NAMESPACE) get pods -o wide > "$$BUNDLE_DIR/kube-system-pods.txt" 2>&1 || true; \
+	kubectl -n $(HELM_NAMESPACE) get events --sort-by='.lastTimestamp' > "$$BUNDLE_DIR/events.txt" 2>&1 || true; \
+	helm status $(HELM_RELEASE) -n $(HELM_NAMESPACE) > "$$BUNDLE_DIR/helm-status.txt" 2>&1 || true; \
+	helm get values $(HELM_RELEASE) -n $(HELM_NAMESPACE) > "$$BUNDLE_DIR/helm-values.txt" 2>&1 || true; \
+	helm history $(HELM_RELEASE) -n $(HELM_NAMESPACE) > "$$BUNDLE_DIR/helm-history.txt" 2>&1 || true; \
+	tar czf "$$BUNDLE_DIR.tar.gz" "$$BUNDLE_DIR/"; \
+	rm -rf "$$BUNDLE_DIR"; \
+	echo "==> Bundle created: $$BUNDLE_DIR.tar.gz"; \
+	echo "    See docs/runbooks/support-bundle.md for Isovalent sysdump instructions."
+
 # ─── Utility ─────────────────────────────────────────────────────────────────
 
 .PHONY: helm-diff
