@@ -319,7 +319,7 @@ if ! kubectl get nodes &>/dev/null; then
 fi
 NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
 CP_READY=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null \
-  | grep " Ready " | wc -l | tr -d ' ')
+  | grep " Ready " | wc -l | tr -d ' ' || echo 0)
 green "Cluster reachable — ${NODE_COUNT} nodes, ${CP_READY} control plane Ready"
 
 if kubectl -n "${HELM_NAMESPACE}" get ds cilium &>/dev/null; then
@@ -327,10 +327,7 @@ if kubectl -n "${HELM_NAMESPACE}" get ds cilium &>/dev/null; then
 fi
 green "No existing Cilium installation"
 
-FLANNEL_EXISTS=$(kubectl -n "${HELM_NAMESPACE}" get ds kube-flannel --no-headers 2>/dev/null \
-  | wc -l | tr -d ' ')
-
-if [[ "${FLANNEL_EXISTS}" -gt 0 ]]; then
+if kubectl -n "${HELM_NAMESPACE}" get ds kube-flannel &>/dev/null; then
   green "Flannel DaemonSet present — using dual-overlay migration path"
   MIGRATION_MODE="dual-overlay"
 else
