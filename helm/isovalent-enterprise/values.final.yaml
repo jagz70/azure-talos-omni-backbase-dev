@@ -1,0 +1,49 @@
+# helm/isovalent-enterprise/values.final.yaml
+# Post-migration finalization overlay: switches Cilium from secondary to primary CNI.
+#
+# Applied AFTER values.yaml and values.azure-talos.yaml during finalization:
+#   helm upgrade ... -f values.yaml -f values.azure-talos.yaml -f values.final.yaml
+#
+# Applied once all nodes have been migrated via CiliumNodeConfig labels.
+# This overlay:
+#   - Makes Cilium the primary CNI on all remaining nodes
+#   - Re-enables NetworkPolicy enforcement
+#   - Enables eBPF host routing (no more legacy routing overhead)
+#   - Restarts any pods still using Flannel-assigned IPs
+#
+# Reference: https://docs.cilium.io/en/latest/installation/k8s-install-migration/
+# Author: Julio Garcia
+
+# ─── CNI: primary mode ────────────────────────────────────────────────────────
+cni:
+  customConf: false  # Write CNI conf on all nodes — Cilium is now primary CNI
+  uninstall: false
+  exclusive: true    # Remove other CNI configurations
+
+# ─── Operator: recycle remaining Flannel-managed pods ────────────────────────
+operator:
+  unmanagedPodWatcher:
+    restart: true   # Restart pods not yet on Cilium networking
+  replicas: 2
+  rollOutPods: true
+
+# ─── IPAM: keep the Cilium migration CIDR ────────────────────────────────────
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+      - 10.245.0.0/16
+    clusterPoolIPv4MaskSize: 24
+
+# ─── Tunnel: keep consistent port from migration phase ───────────────────────
+tunnelPort: 8473
+
+# ─── NetworkPolicy: re-enable after migration is complete ────────────────────
+policyEnforcementMode: "default"
+
+# ─── BPF: full eBPF host routing ─────────────────────────────────────────────
+# Flannel is removed at this point — no need for legacy cross-overlay routing.
+bpf:
+  hostLegacyRouting: false
+  autoMount:
+    enabled: false  # Talos mounts BPF FS itself

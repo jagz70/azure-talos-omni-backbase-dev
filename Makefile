@@ -83,7 +83,7 @@ preflight-migration: ## Check cluster state before CNI migration (Flannel → Ci
 	@echo "  See: docs/runbooks/cni-migration-flannel-to-cilium.md"
 
 .PHONY: migrate-to-cilium
-migrate-to-cilium: env-check helm-repo-add ## Migrate from Flannel + kube-proxy to Isovalent Enterprise for Cilium (single command)
+migrate-to-cilium: env-check helm-repo-add ## Migrate from Flannel to Cilium — dual-overlay if Flannel present, clean install if absent
 	@bash $(SCRIPTS_DIR)/migrate-to-cilium.sh
 
 .PHONY: dry-run

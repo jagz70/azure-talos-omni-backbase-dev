@@ -1,0 +1,56 @@
+# helm/isovalent-enterprise/values.migration.yaml
+# Migration-phase overlay: installs Cilium as secondary CNI alongside existing Flannel.
+#
+# Applied AFTER values.yaml and values.azure-talos.yaml:
+#   helm install ... -f values.yaml -f values.azure-talos.yaml -f values.migration.yaml
+#
+# Key behaviors in migration mode:
+#   - Cilium establishes a VXLAN overlay on port 8473 (Flannel uses 8472)
+#   - Cilium uses a distinct pod CIDR 10.245.0.0/16 (Flannel: 10.244.0.0/16)
+#   - Cilium does NOT write a CNI config globally (cni.customConf=true)
+#   - Nodes opt in to Cilium CNI one at a time via CiliumNodeConfig label
+#   - kube-proxy replacement (eBPF) is active immediately on all nodes
+#   - NetworkPolicy enforcement is disabled during dual-overlay phase
+#
+# Reference: https://docs.cilium.io/en/latest/installation/k8s-install-migration/
+# Author: Julio Garcia
+
+# ─── CNI: secondary mode — do not write CNI conf globally ────────────────────
+# Nodes opt in via CiliumNodeConfig (io.cilium.migration/cilium-default=true)
+cni:
+  customConf: true   # Don't write /etc/cni/net.d/05-cilium.conflist globally
+  uninstall: false   # Don't remove Flannel CNI conf on Cilium shutdown
+  exclusive: false   # Don't purge other CNI confs on unlabeled nodes
+
+# ─── Operator: don't recycle Flannel-managed pods ────────────────────────────
+operator:
+  unmanagedPodWatcher:
+    restart: false  # Pods managed by Flannel are intentionally left alone
+  replicas: 2
+  rollOutPods: true
+
+# ─── IPAM: new CIDR distinct from Flannel's 10.244.0.0/16 ───────────────────
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+      - 10.245.0.0/16   # DISTINCT from Flannel's 10.244.0.0/16
+    clusterPoolIPv4MaskSize: 24
+
+# ─── Tunnel: distinct port to avoid conflict with Flannel ────────────────────
+# Flannel uses VXLAN on port 8472 (default). Cilium must use a different port
+# so both overlays can coexist during migration.
+tunnelPort: 8473
+
+# ─── NetworkPolicy: disabled during dual-overlay phase ───────────────────────
+# With two CNIs active, non-Cilium pods would be incorrectly dropped by policy.
+# Re-enabled in values.final.yaml after migration is complete.
+policyEnforcementMode: "never"
+
+# ─── BPF: legacy routing for cross-overlay traffic ───────────────────────────
+# Allows traffic between Cilium-managed pods (10.245.x) and Flannel-managed
+# pods (10.244.x) via the Linux routing table during dual-overlay coexistence.
+bpf:
+  hostLegacyRouting: true
+  autoMount:
+    enabled: false  # Talos mounts BPF FS itself
