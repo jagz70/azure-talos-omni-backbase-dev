@@ -43,7 +43,8 @@ Platform engineering initiative: Backbase self-hosted on Azure using Talos Linux
 - `kubectl` configured (kubeconfig from Omni — see below)
 - `helm` >= 3.12
 - `az` CLI authenticated (`az login`)
-- `.env` file populated (see `.env.example`)
+
+**The Isovalent Helm repo (`https://helm.isovalent.com`) is publicly accessible. No credentials required.**
 
 ### Get kubeconfig from Omni
 
@@ -58,7 +59,8 @@ Platform engineering initiative: Backbase self-hosted on Azure using Talos Linux
 
 ```bash
 cp .env.example .env
-# Edit .env and populate all required values
+# Only required: set KUBECONFIG path
+# All other values have working defaults
 ```
 
 ### Run preflight checks
@@ -67,10 +69,25 @@ cp .env.example .env
 make preflight
 ```
 
+### (Optional) Inspect available chart versions
+
+```bash
+make discover-version
+# Shows available isovalent/cilium-enterprise and isovalent/cilium versions
+# Optionally pin ISOVALENT_VERSION in .env — or let install auto-discover
+```
+
+### (Optional) Dry run — render templates without applying
+
+```bash
+make dry-run
+```
+
 ### Install Isovalent Enterprise for Cilium
 
 ```bash
 make install
+# If ISOVALENT_VERSION is not set in .env, the latest stable is auto-discovered
 ```
 
 ### Validate the installation
@@ -92,7 +109,9 @@ make hubble
 | Target | Description |
 |---|---|
 | `make preflight` | Run pre-installation checks |
-| `make install` | Install Isovalent Enterprise via Helm |
+| `make discover-version` | List available chart versions from Isovalent Helm repo |
+| `make dry-run` | Render Helm templates without applying to cluster |
+| `make install` | Install Isovalent Enterprise for Cilium via Helm (auto-discovers version if not pinned) |
 | `make validate` | Validate Cilium + Hubble health |
 | `make upgrade` | Upgrade Isovalent Enterprise in place |
 | `make rollback-help` | Print rollback guidance and commands |

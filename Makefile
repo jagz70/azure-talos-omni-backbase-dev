@@ -14,12 +14,14 @@ ifeq ($(ENV_EXISTS),yes)
   export
 endif
 
-HELM_NAMESPACE   ?= kube-system
-HELM_RELEASE     ?= cilium
-HELM_CHART       ?= isovalent/cilium
-HELM_VALUES      := helm/isovalent-enterprise/values.yaml
-HELM_VALUES_ENV  := helm/isovalent-enterprise/values.azure-talos.yaml
-SCRIPTS_DIR      := scripts
+HELM_NAMESPACE         ?= kube-system
+HELM_RELEASE           ?= cilium
+HELM_CHART             ?= isovalent/cilium-enterprise
+ISOVALENT_HELM_REPO    ?= https://helm.isovalent.com
+CLUSTER_API_ENDPOINT   ?= 20.120.8.75
+HELM_VALUES            := helm/isovalent-enterprise/values.yaml
+HELM_VALUES_ENV        := helm/isovalent-enterprise/values.azure-talos.yaml
+SCRIPTS_DIR            := scripts
 
 # ─── Help ────────────────────────────────────────────────────────────────────
 
@@ -35,14 +37,16 @@ help: ## Show this help
 # ─── Environment ─────────────────────────────────────────────────────────────
 
 .PHONY: env-check
-env-check: ## Verify .env is present and key variables are set
+env-check: ## Verify .env is present and KUBECONFIG is set
 	@echo "==> Checking .env..."
-	@[ "$(ENV_EXISTS)" = "yes" ] || (echo "ERROR: .env not found. Copy .env.example and populate it." && exit 1)
+	@[ "$(ENV_EXISTS)" = "yes" ] || (echo "ERROR: .env not found. Copy .env.example and set KUBECONFIG." && exit 1)
 	@[ -n "$(KUBECONFIG)" ] || (echo "ERROR: KUBECONFIG is not set in .env" && exit 1)
-	@[ -n "$(CLUSTER_API_ENDPOINT)" ] || (echo "ERROR: CLUSTER_API_ENDPOINT is not set in .env" && exit 1)
-	@echo "    .env: OK"
-	@echo "    KUBECONFIG: $(KUBECONFIG)"
-	@echo "    CLUSTER_API_ENDPOINT: $(CLUSTER_API_ENDPOINT)"
+	@echo "    .env:                  OK"
+	@echo "    KUBECONFIG:            $(KUBECONFIG)"
+	@echo "    CLUSTER_API_ENDPOINT:  $(CLUSTER_API_ENDPOINT)"
+	@echo "    HELM_CHART:            $(HELM_CHART)"
+	@if [ -n "$(ISOVALENT_VERSION)" ]; then echo "    ISOVALENT_VERSION:     $(ISOVALENT_VERSION)"; \
+	else echo "    ISOVALENT_VERSION:     (auto-discover at install time)"; fi
 
 # ─── Preflight ───────────────────────────────────────────────────────────────
 
@@ -52,19 +56,21 @@ preflight: env-check ## Run pre-installation checks
 
 # ─── Install ─────────────────────────────────────────────────────────────────
 
+# The Isovalent Helm repo is publicly accessible — no credentials required.
 .PHONY: helm-repo-add
-helm-repo-add: ## Add the Isovalent Helm repository
-	@echo "==> Adding Isovalent Helm repo..."
-	@if [ -n "$(ISOVALENT_HELM_USERNAME)" ] && [ -n "$(ISOVALENT_HELM_TOKEN)" ]; then \
-		helm repo add isovalent $(ISOVALENT_HELM_REPO) \
-			--username "$(ISOVALENT_HELM_USERNAME)" \
-			--password "$(ISOVALENT_HELM_TOKEN)" \
-			--force-update; \
-	else \
-		helm repo add isovalent $(ISOVALENT_HELM_REPO) --force-update; \
-	fi
+helm-repo-add: ## Add/refresh the Isovalent Helm repository (public, no auth required)
+	@echo "==> Adding Isovalent Helm repo (public)..."
+	@helm repo add isovalent $(ISOVALENT_HELM_REPO) --force-update
 	@helm repo update isovalent
-	@echo "    Helm repo: OK"
+	@echo "    Helm repo: OK — $(ISOVALENT_HELM_REPO)"
+
+.PHONY: discover-version
+discover-version: helm-repo-add ## List available cilium-enterprise chart versions from Isovalent repo
+	@bash $(SCRIPTS_DIR)/discover-chart-version.sh
+
+.PHONY: dry-run
+dry-run: env-check helm-repo-add ## Render Helm templates without applying (dry run)
+	@DRY_RUN=true bash $(SCRIPTS_DIR)/install-cilium.sh
 
 .PHONY: install
 install: preflight helm-repo-add ## Install Isovalent Enterprise for Cilium via Helm
@@ -75,6 +81,13 @@ install: preflight helm-repo-add ## Install Isovalent Enterprise for Cilium via 
 .PHONY: upgrade
 upgrade: env-check helm-repo-add ## Upgrade Isovalent Enterprise in place
 	@echo "==> Upgrading $(HELM_RELEASE) in namespace $(HELM_NAMESPACE)..."
+	@if [ -z "$(ISOVALENT_VERSION)" ]; then \
+		echo "    ISOVALENT_VERSION not set — pinning to current release version"; \
+		CURRENT_VER=$$(helm history $(HELM_RELEASE) -n $(HELM_NAMESPACE) --max 1 -o json 2>/dev/null | python3 -c "import sys,json; h=json.load(sys.stdin); print(h[-1]['chart'].split('-')[-1])" 2>/dev/null || echo ""); \
+		echo "    Current deployed version: $${CURRENT_VER:-unknown}"; \
+		echo "    Set ISOVALENT_VERSION in .env to upgrade to a specific version."; \
+		exit 1; \
+	fi
 	@helm upgrade $(HELM_RELEASE) $(HELM_CHART) \
 		--namespace $(HELM_NAMESPACE) \
 		--version "$(ISOVALENT_VERSION)" \
@@ -84,7 +97,7 @@ upgrade: env-check helm-repo-add ## Upgrade Isovalent Enterprise in place
 		--atomic \
 		--timeout 10m \
 		--wait
-	@echo "==> Upgrade complete."
+	@echo "==> Upgrade complete. Run: make validate"
 
 # ─── Validate ────────────────────────────────────────────────────────────────
 
@@ -192,6 +205,7 @@ support-bundle: env-check ## Collect manual support bundle (logs, status, events
 
 .PHONY: helm-diff
 helm-diff: env-check helm-repo-add ## Show what a helm upgrade would change (requires helm-diff plugin)
+	@[ -n "$(ISOVALENT_VERSION)" ] || (echo "ERROR: Set ISOVALENT_VERSION in .env before running helm-diff"; exit 1)
 	@helm diff upgrade $(HELM_RELEASE) $(HELM_CHART) \
 		--namespace $(HELM_NAMESPACE) \
 		--version "$(ISOVALENT_VERSION)" \
