@@ -52,7 +52,7 @@ if [[ ! -f "${KUBECONFIG}" ]]; then
 fi
 
 CLUSTER_API_ENDPOINT="${CLUSTER_API_ENDPOINT:-20.120.8.75}"
-HELM_CHART="${HELM_CHART:-isovalent/cilium-enterprise}"
+HELM_CHART="${HELM_CHART:-isovalent/cilium}"
 
 echo "    KUBECONFIG:           ${KUBECONFIG}"
 echo "    CLUSTER_API_ENDPOINT: ${CLUSTER_API_ENDPOINT}"

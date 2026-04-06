@@ -50,7 +50,7 @@ CP_READY=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-heade
 green "Cluster reachable — ${NODE_COUNT} nodes, ${CP_READY} control plane Ready"
 
 # Abort if Cilium is already installed
-if kubectl -n kube-system get ds cilium &>/dev/null 2>&1; then
+if kubectl -n kube-system get ds cilium &>/dev/null; then
   red "Cilium DaemonSet already exists. Use 'make upgrade' instead of migrate."
   exit 1
 fi
