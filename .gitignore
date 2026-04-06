@@ -1,0 +1,61 @@
+# ─── Secrets and credentials ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*-secret.yaml
+*-secrets.yaml
+*secret*.yaml
+!secrets.example.yaml
+
+# ─── Kubernetes access files ──────────────────────────────────────────────────
+kubeconfig
+kubeconfig.yaml
+*kubeconfig*
+*.kubeconfig
+
+# ─── Talos / Omni sensitive artifacts ────────────────────────────────────────
+machine-config.yaml
+*machine-config*
+*-machine-config*
+talosconfig
+*.talosconfig
+
+# ─── Azure image artifacts ────────────────────────────────────────────────────
+*.vhd
+*.vhd.xz
+*.img
+*.iso
+
+# ─── Helm rendered output (local renders only — not committed) ────────────────
+helm-render/
+rendered/
+*.rendered.yaml
+
+# ─── Downloaded binaries ──────────────────────────────────────────────────────
+bin/
+.bin/
+hubble
+cilium
+talosctl
+omnictl
+
+# ─── macOS metadata ──────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverrideIcon
+
+# ─── Editor artifacts ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Temp / scratch ──────────────────────────────────────────────────────────
+tmp/
+scratch/
+*.tmp
+*.bak
+
+# ─── Log files ───────────────────────────────────────────────────────────────
+*.log

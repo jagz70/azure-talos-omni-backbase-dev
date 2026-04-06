@@ -1,0 +1,112 @@
+# helm/isovalent-enterprise/values.yaml
+# Baseline Helm values for Isovalent Enterprise for Cilium v25.11
+# Target: talos-omni-backbase-dev (Azure, Omni-managed, Talos Linux)
+#
+# This file contains non-secret, environment-agnostic defaults.
+# Azure and Talos-specific overrides are in values.azure-talos.yaml.
+# Operator-supplied secret inputs (credentials, license) are in .env (not committed).
+#
+# Reference: https://docs.isovalent.com/v25.11/ink/install/generic.html
+# Secondary: https://docs.cilium.io/en/stable/helm-reference.html
+#
+# Author: Julio Garcia
+
+# ─── kube-proxy replacement ──────────────────────────────────────────────────
+# Talos with Omni sets CNI=none, which means kube-proxy is not running.
+# Cilium must replace kube-proxy entirely using eBPF.
+# k8sServiceHost and k8sServicePort are set in values.azure-talos.yaml (env-specific).
+kubeProxyReplacement: true
+
+# ─── IPAM ─────────────────────────────────────────────────────────────────────
+# cluster-pool mode: Cilium manages pod IP allocation from a cluster-wide CIDR pool.
+# Each node gets a per-node /24 carved from the pool.
+# This avoids Azure CNI delegation complexity and is appropriate for Talos.
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+      - 10.244.0.0/16
+    clusterPoolIPv4MaskSize: 24
+
+# ─── Hubble ───────────────────────────────────────────────────────────────────
+# Hubble provides deep network observability via eBPF flow capture.
+hubble:
+  enabled: true
+
+  # Hubble relay aggregates flow data from all nodes.
+  relay:
+    enabled: true
+
+  # Hubble UI provides a web-based flow visualization interface.
+  ui:
+    enabled: true
+
+  # Hubble metrics for Prometheus integration (disabled in baseline, enable when Prometheus is ready).
+  metrics:
+    enabled: false
+    # When enabling, configure with:
+    # enabled:
+    #   - dns
+    #   - drop
+    #   - tcp
+    #   - flow
+    #   - port-distribution
+    #   - icmp
+    #   - http
+
+# ─── Operator ─────────────────────────────────────────────────────────────────
+operator:
+  # Run 2 replicas for HA in a 3-node control plane setup.
+  replicas: 2
+  rollOutPods: true
+
+# ─── Health ───────────────────────────────────────────────────────────────────
+# Enable Cilium health checking between nodes.
+healthChecking: true
+
+# ─── CNI ──────────────────────────────────────────────────────────────────────
+cni:
+  install: true
+  # Talos manages its own CNI directory; Cilium installs into the standard path.
+  exclusive: true
+
+# ─── Rolling updates ──────────────────────────────────────────────────────────
+rollOutCiliumPods: true
+
+# ─── Resource limits ──────────────────────────────────────────────────────────
+# Baseline resource allocations. Tune based on observed usage after installation.
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+# ─── Image pull secret ────────────────────────────────────────────────────────
+# If Isovalent Enterprise requires an image pull secret, the install script
+# creates it in kube-system before helm install. Reference it here.
+# Leave empty if public registry access is confirmed for your entitlement.
+# OPERATOR: Confirm with your Isovalent customer portal whether imagePullSecrets are required.
+imagePullSecrets: []
+# imagePullSecrets:
+#   - name: isovalent-pull-secret
+
+# ─── Future-safe stubs ────────────────────────────────────────────────────────
+# These are disabled in the baseline. Uncomment when the relevant track is ready.
+
+# BGP (Phase 4)
+# bgpControlPlane:
+#   enabled: true
+
+# Gateway API (Phase 4)
+# gatewayAPI:
+#   enabled: true
+
+# Encryption (Phase 4)
+# encryption:
+#   enabled: true
+#   type: wireguard
+
+# Network Policy (Phase 4)
+# policyEnforcementMode: "default"

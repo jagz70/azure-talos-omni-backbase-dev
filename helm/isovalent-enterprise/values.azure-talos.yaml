@@ -1,0 +1,78 @@
+# helm/isovalent-enterprise/values.azure-talos.yaml
+# Azure + Talos-specific Helm value overrides for Isovalent Enterprise for Cilium v25.11.
+# Applied on top of values.yaml via: helm install ... --values values.yaml --values values.azure-talos.yaml
+#
+# This file contains overrides specific to:
+#   - Azure networking (VXLAN tunnel, no native routing)
+#   - Talos Linux OS constraints (security capabilities, cgroup mounts)
+#   - This cluster's API endpoint
+#
+# Author: Julio Garcia
+
+# ─── Kubernetes API server endpoint ──────────────────────────────────────────
+# Required for kube-proxy replacement. Cilium needs to reach the API server
+# directly, not through a ClusterIP service, to bootstrap eBPF service routing.
+# Value: the Azure Load Balancer public IP fronting the control plane.
+k8sServiceHost: "20.120.8.75"
+k8sServicePort: 6443
+
+# ─── Tunnel / routing mode ────────────────────────────────────────────────────
+# Azure VNET does not support BGP-based native pod routing without explicit
+# route table configuration. VXLAN tunnel mode is the safe baseline.
+# Switch to routingMode: native with BGP enabled in Phase 4.
+tunnelProtocol: vxlan
+# routingMode: tunnel   # this is the default; explicit for clarity
+
+# ─── Talos Linux: security capabilities ──────────────────────────────────────
+# Talos uses a minimal, hardened kernel and does not run privileged containers
+# in the same way as standard distributions. Cilium requires these specific
+# Linux capabilities to manage the eBPF datapath on Talos nodes.
+securityContext:
+  capabilities:
+    ciliumAgent:
+      - CHOWN
+      - KILL
+      - NET_ADMIN
+      - NET_RAW
+      - IPC_LOCK
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    cleanCiliumState:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_RESOURCE
+
+# ─── Talos Linux: cgroup filesystem ──────────────────────────────────────────
+# Talos mounts cgroupfs itself. Setting autoMountCgroupfs: false prevents Cilium
+# from attempting a redundant mount, which would fail on Talos.
+cgroup:
+  autoMountCgroupfs: false
+
+# ─── Talos Linux: host BPF filesystem ────────────────────────────────────────
+# Talos mounts /sys/fs/bpf itself. Instruct Cilium not to automount it.
+bpf:
+  autoMount:
+    enabled: false
+
+# ─── Node initialization ──────────────────────────────────────────────────────
+# Talos-specific init container settings to ensure Cilium mounts are
+# compatible with the Talos rootfs layout.
+nodeinit:
+  enabled: true
+
+# ─── Azure: IPv4-only baseline ────────────────────────────────────────────────
+# This cluster runs IPv4 only. Explicitly disable IPv6 to avoid
+# unintended dual-stack behavior.
+ipv4:
+  enabled: true
+ipv6:
+  enabled: false
+
+# ─── Azure: endpoint health checks ───────────────────────────────────────────
+# Ensure Cilium endpoint health checking uses the correct interface.
+# Azure VMs have a single primary NIC (eth0 on most Talos images).
+healthChecking: true
