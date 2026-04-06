@@ -38,6 +38,12 @@ Platform engineering initiative: Backbase self-hosted on Azure using Talos Linux
 
 ## Quick Start
 
+### Current Cluster State
+
+> **CNI migration required.** This cluster was provisioned by Omni with Flannel as the default CNI and kube-proxy running. Before installing Cilium, follow [docs/runbooks/cni-migration-flannel-to-cilium.md](docs/runbooks/cni-migration-flannel-to-cilium.md) to remove Flannel and kube-proxy.
+>
+> Cluster: `talos-omni-backbase-dev` — k8s v1.35.2, Talos v1.12.5, 3 CP + 5 workers
+
 ### Prerequisites
 
 - `kubectl` configured (kubeconfig from Omni — see below)
@@ -133,6 +139,7 @@ make hubble
 
 | Runbook | Purpose |
 |---|---|
+| [cni-migration-flannel-to-cilium.md](docs/runbooks/cni-migration-flannel-to-cilium.md) | **Start here** — migrate existing Flannel CNI to Cilium |
 | [cilium-install.md](docs/runbooks/cilium-install.md) | Step-by-step Cilium installation |
 | [cilium-validate.md](docs/runbooks/cilium-validate.md) | Post-install health validation |
 | [cilium-upgrade.md](docs/runbooks/cilium-upgrade.md) | Safe upgrade procedure |

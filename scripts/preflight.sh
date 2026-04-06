@@ -128,17 +128,32 @@ fi
 header "Existing CNI"
 
 EXISTING_CILIUM=$(kubectl -n kube-system get ds cilium --no-headers 2>/dev/null | wc -l | tr -d ' ')
+EXISTING_FLANNEL=$(kubectl -n kube-system get ds kube-flannel --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
 if [[ "${EXISTING_CILIUM}" -gt 0 ]]; then
   warn "Cilium DaemonSet already exists in kube-system. If this is a reinstall, use 'make upgrade' instead."
 else
   pass "No existing Cilium DaemonSet found"
 fi
 
+if [[ "${EXISTING_FLANNEL}" -gt 0 ]]; then
+  fail "Flannel CNI is running. Cilium cannot be installed alongside Flannel."
+  fail "Migration required. Follow: docs/runbooks/cni-migration-flannel-to-cilium.md"
+  fail "Steps: (1) Set Omni cluster CNI to 'none', (2) delete Flannel, (3) delete kube-proxy, (4) re-run make install"
+else
+  pass "Flannel not found — CNI slot is clear for Cilium"
+fi
+
+# ─── kube-proxy check ────────────────────────────────────────────────────────
+header "kube-proxy"
+
 KUBE_PROXY=$(kubectl -n kube-system get ds kube-proxy --no-headers 2>/dev/null | wc -l | tr -d ' ')
 if [[ "${KUBE_PROXY}" -gt 0 ]]; then
-  warn "kube-proxy DaemonSet exists. Cilium kube-proxy replacement may conflict. Verify Talos CNI=none is set via Omni."
+  fail "kube-proxy DaemonSet is running. Must be removed before Cilium kube-proxy replacement install."
+  fail "Migration required. See: docs/runbooks/cni-migration-flannel-to-cilium.md"
+  fail "kubectl -n kube-system delete ds kube-proxy"
 else
-  pass "kube-proxy not running (expected for Talos + Omni)"
+  pass "kube-proxy not running (correct for Cilium kube-proxy replacement)"
 fi
 
 # ─── Helm repo check ──────────────────────────────────────────────────────────
@@ -148,6 +163,29 @@ if helm repo list 2>/dev/null | grep -q "isovalent"; then
   pass "Isovalent Helm repo already added"
 else
   warn "Isovalent Helm repo not yet added. Run 'make helm-repo-add' before install."
+fi
+
+# ─── Kubernetes version compatibility ────────────────────────────────────────
+header "Kubernetes version"
+
+K8S_VERSION=$(kubectl version --short 2>/dev/null | grep "Server Version" | awk '{print $3}' || \
+              kubectl version 2>/dev/null | grep "Server Version" | grep -o 'v[0-9.]*')
+if [[ -n "${K8S_VERSION}" ]]; then
+  pass "Kubernetes server version: ${K8S_VERSION}"
+  # Warn if 1.33+ — cilium-enterprise 1.17.x is not compatible
+  MINOR=$(echo "${K8S_VERSION}" | cut -d. -f2)
+  if [[ "${MINOR}" -ge 33 ]]; then
+    # Check if HELM_CHART is the old cilium-enterprise
+    CONFIGURED_CHART="${HELM_CHART:-isovalent/cilium}"
+    if echo "${CONFIGURED_CHART}" | grep -q "cilium-enterprise"; then
+      warn "k8s ${K8S_VERSION}: isovalent/cilium-enterprise (1.17.x) may not support this version."
+      warn "Recommend: use HELM_CHART=isovalent/cilium (1.18.x) in .env for k8s 1.33+"
+    else
+      pass "HELM_CHART=${CONFIGURED_CHART} — compatible with k8s ${K8S_VERSION}"
+    fi
+  fi
+else
+  warn "Could not determine Kubernetes server version"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────────

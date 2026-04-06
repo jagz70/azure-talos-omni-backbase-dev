@@ -41,18 +41,19 @@ hubble:
   ui:
     enabled: true
 
-  # Hubble metrics for Prometheus integration (disabled in baseline, enable when Prometheus is ready).
+  # Hubble metrics for Prometheus integration.
+  # Disabled in baseline: set to null (not false — chart schema requires null or array).
+  # To enable, replace null with an array of metric names:
+  #   enabled:
+  #     - dns
+  #     - drop
+  #     - tcp
+  #     - flow
+  #     - port-distribution
+  #     - icmp
+  #     - http
   metrics:
-    enabled: false
-    # When enabling, configure with:
-    # enabled:
-    #   - dns
-    #   - drop
-    #   - tcp
-    #   - flow
-    #   - port-distribution
-    #   - icmp
-    #   - http
+    enabled: ~
 
 # ─── Operator ─────────────────────────────────────────────────────────────────
 operator:

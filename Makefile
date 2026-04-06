@@ -16,7 +16,9 @@ endif
 
 HELM_NAMESPACE         ?= kube-system
 HELM_RELEASE           ?= cilium
-HELM_CHART             ?= isovalent/cilium-enterprise
+# isovalent/cilium required for k8s >= 1.33+ (this cluster: v1.35.2)
+# isovalent/cilium-enterprise topped out at 1.17.7 (k8s <= 1.32)
+HELM_CHART             ?= isovalent/cilium
 ISOVALENT_HELM_REPO    ?= https://helm.isovalent.com
 CLUSTER_API_ENDPOINT   ?= 20.120.8.75
 HELM_VALUES            := helm/isovalent-enterprise/values.yaml
@@ -65,8 +67,20 @@ helm-repo-add: ## Add/refresh the Isovalent Helm repository (public, no auth req
 	@echo "    Helm repo: OK — $(ISOVALENT_HELM_REPO)"
 
 .PHONY: discover-version
-discover-version: helm-repo-add ## List available cilium-enterprise chart versions from Isovalent repo
+discover-version: helm-repo-add ## List available cilium chart versions from Isovalent repo
 	@bash $(SCRIPTS_DIR)/discover-chart-version.sh
+
+.PHONY: preflight-migration
+preflight-migration: ## Check cluster state before CNI migration (Flannel → Cilium)
+	@echo "==> CNI migration preflight for $(CLUSTER_API_ENDPOINT)..."
+	@echo ""
+	@echo "  Existing CNI (Flannel):"
+	@kubectl -n $(HELM_NAMESPACE) get ds kube-flannel 2>/dev/null && echo "    ACTION NEEDED: remove Flannel before install" || echo "    Flannel: not found (already removed)"
+	@echo ""
+	@echo "  kube-proxy:"
+	@kubectl -n $(HELM_NAMESPACE) get ds kube-proxy 2>/dev/null && echo "    ACTION NEEDED: remove kube-proxy before install" || echo "    kube-proxy: not found (already removed)"
+	@echo ""
+	@echo "  See: docs/runbooks/cni-migration-flannel-to-cilium.md"
 
 .PHONY: dry-run
 dry-run: env-check helm-repo-add ## Render Helm templates without applying (dry run)
