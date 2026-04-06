@@ -49,6 +49,27 @@ This cluster has no production workloads. POC-grade disruption is acceptable.
 
 ---
 
+## Automated Migration (Recommended)
+
+The entire migration is automated by a single command:
+
+```bash
+make migrate-to-cilium
+```
+
+This script:
+1. Validates prerequisites (cluster reachable, no existing Cilium)
+2. Removes Flannel DaemonSet, ConfigMap, RBAC, and node annotations
+3. Removes kube-proxy DaemonSet and ConfigMap
+4. Waits 30 seconds to confirm Omni does not reconcile them back
+5. Installs Isovalent Enterprise for Cilium via Helm
+6. Restarts CoreDNS
+7. Runs full validation
+
+**The manual steps below are for reference only.** Use them if you need to run a partial migration, debug a failure, or understand what the script does.
+
+---
+
 ## Pre-Migration Checklist
 
 - [ ] All nodes are Ready: `kubectl get nodes`
@@ -59,31 +80,25 @@ This cluster has no production workloads. POC-grade disruption is acceptable.
 
 ---
 
-## Step 1 — Configure Omni to Stop Managing the CNI
+## Note on Omni CNI Management
 
-**This is the most important step.** If Omni is set to deploy Flannel, it may re-create the Flannel DaemonSet after you delete it.
+**No Omni UI action is required before migration.**
 
-In Omni UI:
-1. Go to: https://bellyupdown.na-west-1.omni.siderolabs.io/clusters
-2. Select cluster `talos-omni-backbase-dev`
-3. Navigate to cluster configuration / edit
-4. Find the **CNI** setting and change it from `flannel` to `none` or `custom`
-5. Save and apply the configuration
+This was verified via `omnictl` API queries against the live cluster:
 
-> If Omni does not have a CNI setting visible in the UI, check the cluster's Kubernetes patches
-> or machine config patches section. The setting may appear as:
-> ```yaml
-> network:
->   cni:
->     name: none
-> ```
-> Apply this via Omni's cluster configuration patch mechanism.
+- The Cluster spec (`omnictl get cluster talos-omni-backbase-dev -o yaml`) contains **no CNI field**
+- All config patches are per-machine hostname patches only — no CNI configuration
+- `ClusterBootstrapStatus.bootstrapped: true` — bootstrap is a one-time event; Omni does not re-run it
+- The Flannel and kube-proxy DaemonSets have **no `ownerReferences`** and **no Omni labels**
+- `kubectl -n kube-system get all -l "omni.sidero.dev/cluster=talos-omni-backbase-dev"` returns no resources
 
-**Verify Omni will not re-create Flannel before proceeding to Step 2.**
+Omni deployed Flannel once at bootstrap and does not reconcile it. Deleting the DaemonSet is permanent.
+
+The `migrate-to-cilium.sh` script includes a 30-second post-deletion watch to confirm this at runtime.
 
 ---
 
-## Step 2 — Remove Flannel
+## Step 1 — Remove Flannel
 
 ```bash
 # Delete the Flannel DaemonSet
@@ -108,7 +123,7 @@ kubectl -n kube-system get pods | grep flannel
 
 ---
 
-## Step 3 — Remove kube-proxy
+## Step 2 — Remove kube-proxy
 
 Cilium will replace kube-proxy entirely using eBPF. kube-proxy must be removed before
 the Cilium install to avoid iptables rule conflicts.
@@ -131,7 +146,7 @@ kubectl -n kube-system get pods | grep kube-proxy
 
 ---
 
-## Step 4 — Install Isovalent Enterprise for Cilium
+## Step 3 — Install Isovalent Enterprise for Cilium
 
 At this point, Flannel and kube-proxy are removed. The cluster has no active CNI or service routing. Install Cilium immediately.
 
@@ -152,7 +167,7 @@ If install fails, see [cilium-rollback.md](cilium-rollback.md) and the Rollback 
 
 ---
 
-## Step 5 — Restart CoreDNS
+## Step 4 — Restart CoreDNS
 
 CoreDNS pods still have their old Flannel-assigned IP addresses. Restart them to get
 Cilium-managed IPs and restore DNS resolution across the cluster.
@@ -164,7 +179,7 @@ kubectl rollout status deployment/coredns -n kube-system --timeout=3m
 
 ---
 
-## Step 6 — Validate
+## Step 5 — Validate
 
 ```bash
 make validate
@@ -191,7 +206,7 @@ kubectl delete pod client server
 
 ---
 
-## Step 7 — Recycle Existing Pods (Optional)
+## Step 6 — Recycle Existing Pods (Optional)
 
 Pods that were running during the migration still have Flannel-assigned networking state cached
 in some scenarios. For a clean state, rolling-restart application deployments:
@@ -203,12 +218,12 @@ kubectl get deployments --all-namespaces
 # kubectl rollout restart deployment/<name> -n <namespace>
 ```
 
-CoreDNS (Step 5) is the most critical. Application pods in this POC cluster are unlikely to
+CoreDNS (Step 4) is the most critical. Application pods in this POC cluster are unlikely to
 have issues since Cilium preserves the same pod CIDR (10.244.0.0/16).
 
 ---
 
-## Step 8 — Access Hubble
+## Step 7 — Access Hubble
 
 ```bash
 make hubble
@@ -254,10 +269,7 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/kubernetes/v1.35.2
 kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
 ```
 
-**After restoring**: Update Omni to set CNI back to `flannel` if Omni was managing it.
-
-> Note: If Omni was configured to use CNI=none (Step 1), Flannel will NOT be automatically
-> re-deployed by Omni. You must apply the Flannel manifest manually for rollback.
+**After restoring**: Omni does not manage the CNI after bootstrap. Flannel must be applied manually as shown above — Omni will not re-deploy it automatically.
 
 ---
 

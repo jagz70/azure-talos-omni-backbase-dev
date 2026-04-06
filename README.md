@@ -40,7 +40,7 @@ Platform engineering initiative: Backbase self-hosted on Azure using Talos Linux
 
 ### Current Cluster State
 
-> **CNI migration required.** This cluster was provisioned by Omni with Flannel as the default CNI and kube-proxy running. Before installing Cilium, follow [docs/runbooks/cni-migration-flannel-to-cilium.md](docs/runbooks/cni-migration-flannel-to-cilium.md) to remove Flannel and kube-proxy.
+> **CNI migration required.** This cluster was provisioned by Omni with Flannel as the default CNI and kube-proxy running. Run `make migrate-to-cilium` to perform the full automated migration.
 >
 > Cluster: `talos-omni-backbase-dev` — k8s v1.35.2, Talos v1.12.5, 3 CP + 5 workers
 
@@ -69,42 +69,25 @@ cp .env.example .env
 # All other values have working defaults
 ```
 
-### Run preflight checks
+### Migrate from Flannel to Cilium (current cluster state)
 
 ```bash
-make preflight
+make preflight-migration   # inspect current CNI state
+make migrate-to-cilium     # automated: remove Flannel/kube-proxy, install Cilium, validate
+make hubble                # → http://localhost:12000
 ```
 
-### (Optional) Inspect available chart versions
+The migration script handles everything in a single command — no Omni UI steps required.
+See [docs/runbooks/cni-migration-flannel-to-cilium.md](docs/runbooks/cni-migration-flannel-to-cilium.md) for details.
+
+### Fresh install (if CNI already removed)
 
 ```bash
-make discover-version
-# Shows available isovalent/cilium-enterprise and isovalent/cilium versions
-# Optionally pin ISOVALENT_VERSION in .env — or let install auto-discover
-```
-
-### (Optional) Dry run — render templates without applying
-
-```bash
-make dry-run
-```
-
-### Install Isovalent Enterprise for Cilium
-
-```bash
-make install
-# If ISOVALENT_VERSION is not set in .env, the latest stable is auto-discovered
-```
-
-### Validate the installation
-
-```bash
+make preflight             # pre-installation checks
+make discover-version      # (optional) inspect available chart versions
+make dry-run               # (optional) render templates without applying
+make install               # install — auto-discovers latest stable version
 make validate
-```
-
-### Access Hubble UI
-
-```bash
 make hubble
 ```
 
@@ -115,6 +98,8 @@ make hubble
 | Target | Description |
 |---|---|
 | `make preflight` | Run pre-installation checks |
+| `make preflight-migration` | Check cluster state before CNI migration |
+| `make migrate-to-cilium` | Full automated migration: Flannel → Cilium (single command) |
 | `make discover-version` | List available chart versions from Isovalent Helm repo |
 | `make dry-run` | Render Helm templates without applying to cluster |
 | `make install` | Install Isovalent Enterprise for Cilium via Helm (auto-discovers version if not pinned) |
