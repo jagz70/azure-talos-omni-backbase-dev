@@ -19,12 +19,19 @@ ENV_FILE="${REPO_ROOT}/.env"
 
 HELM_NAMESPACE="${HELM_NAMESPACE:-kube-system}"
 LOCAL_PORT="${HUBBLE_LOCAL_PORT:-12000}"
-HUBBLE_UI_PORT=12000
+HUBBLE_UI_SVC_PORT=80  # hubble-ui ClusterIP service listens on port 80
 
-# Load .env
+# Load .env if present (optional)
 if [[ -f "${ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
+fi
+
+# Auto-detect KUBECONFIG
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  if [[ -f "${HOME}/.kube/config" ]]; then
+    export KUBECONFIG="${HOME}/.kube/config"
+  fi
 fi
 
 echo "==> Starting Hubble UI port-forward..."
@@ -47,4 +54,4 @@ fi
 kubectl port-forward \
   --namespace "${HELM_NAMESPACE}" \
   service/hubble-ui \
-  "${LOCAL_PORT}:${HUBBLE_UI_PORT}"
+  "${LOCAL_PORT}:${HUBBLE_UI_SVC_PORT}"
